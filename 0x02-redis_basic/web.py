@@ -1,45 +1,38 @@
 #!/usr/bin/env python3
-"""Implementing an expiring web cache and tracker"""
-
+'''A module with tools for request caching and tracking.
+'''
+import redis
 import requests
-import time
 from functools import wraps
+from typing import Callable
 
-cache = {}
+
+redis_store = redis.Redis()
+'''The module-level Redis instance.
+'''
 
 
+def data_cacher(method: Callable) -> Callable:
+    '''Caches the output of fetched data.
+    '''
+    @wraps(method)
+    def invoker(url) -> str:
+        '''The wrapper function for caching the output.
+        '''
+        redis_store.incr(f'count:{url}')
+        result = redis_store.get(f'result:{url}')
+        if result:
+            return result.decode('utf-8')
+        result = method(url)
+        redis_store.set(f'count:{url}', 0)
+        redis_store.setex(f'result:{url}', 10, result)
+        return result
+    return invoker
+
+
+@data_cacher
 def get_page(url: str) -> str:
-    """
-    checks if the URL is cached and not expired
-    and make the request and retrieve the HTML content
-    """
-    if url in cache and cache[url]['expiration'] > time.time():
-        cache[url]['count'] += 1
-        return cache[url]['content']
-    response = requests.get(url)
-    con = response.text
-    cache[url] = {'content': con, 'expiration': time.time() + 10, 'count': 1}
-    return con
-
-
-def cache_result(func):
-    """
-    Decorator to track URL access count
-    and cache the result
-    """
-    @wraps(func)
-    def wrapper(url):
-        if url in cac and cac[url]['expiration'] > time.time():
-            cac[url]['count'] += 1
-            return cac[url]['content']
-        con = func(url)
-        cac[url] = {'content': con, 'expiration': time.time() + 10, 'count': 1}
-        return con
-    return wrapper
-
-
-@cache_result
-def get_page_with_decorator(url: str) -> str:
-    """ prints the output"""
-    response = requests.get(url)
-    return response.text
+    '''Returns the content of a URL after caching the request's response,
+    and tracking the request.
+    '''
+    return requests.get(url).text
